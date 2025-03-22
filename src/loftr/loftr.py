@@ -117,6 +117,44 @@ class LoFTR(nn.Module):
         # 5. match fine-level            
         self.fine_matching(feat_f0_unfold, feat_f1_unfold, data)
 
+    def forward_pair(self, data: dict):
+
+        # 2. coarse-level loftr module
+        feat_c0, feat_c1 = self.loftr_coarse(data['feats_c0'], data['feats_c1'], None, None)
+
+        feat_c0 = rearrange(feat_c0, 'n c h w -> n (h w) c')
+        feat_c1 = rearrange(feat_c1, 'n c h w -> n (h w) c')
+        
+        # detect NaN during mixed precision training
+        # if self.config['replace_nan'] and (torch.any(torch.isnan(feat_c0)) or torch.any(torch.isnan(feat_c1))):
+            # detect_NaN(feat_c0, feat_c1)
+            
+        # 3. match coarse-level
+        # self.coarse_matching(feat_c0, feat_c1, data, 
+        #                         mask_c0=mask_c0.view(mask_c0.size(0), -1) if mask_c0 is not None else mask_c0, 
+        #                         mask_c1=mask_c1.view(mask_c1.size(0), -1) if mask_c1 is not None else mask_c1
+        #                         )
+        self.coarse_matching(feat_c0, feat_c1, data, mask_c0=None, mask_c1=None)
+
+        # prevent fp16 overflow during mixed precision training
+        # feat_c0, feat_c1 = map(lambda feat: feat / feat.shape[-1]**.5,
+        #                 [feat_c0, feat_c1])
+        feat_c0 = feat_c0 / feat_c0.shape[-1]**.5
+        feat_c1 = feat_c1 / feat_c1.shape[-1]**.5
+
+        # 4. fine-level refinement
+        feat_f0_unfold, feat_f1_unfold = self.fine_preprocess(feat_c0, feat_c1, data)
+        
+        # detect NaN during mixed precision training
+        # if self.config['replace_nan'] and (torch.any(torch.isnan(feat_f0_unfold)) or torch.any(torch.isnan(feat_f1_unfold))):
+        #     detect_NaN(feat_f0_unfold, feat_f1_unfold)
+        
+        # del feat_c0, feat_c1, mask_c0, mask_c1
+
+        # 5. match fine-level            
+        self.fine_matching(feat_f0_unfold, feat_f1_unfold, data)
+
+
     def load_state_dict(self, state_dict, *args, **kwargs):
         for k in list(state_dict.keys()):
             if k.startswith('matcher.'):
